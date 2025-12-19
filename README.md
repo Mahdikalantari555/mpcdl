@@ -12,21 +12,20 @@ Install mpcdl directly from GitHub:
 pip install git+https://github.com/Mahdikalantari555/mpcdl.git
 ```
 
-Install on Conda environment – recommended:
+## Install on Conda environment – recommended:
 
 This method creates an isolated Conda environment and installs mpcdl from source while resolving geospatial dependencies cleanly.
 
 1. Clone the repository
+```bash
 git clone https://github.com/Mahdikalantari555/mpcdl.git
 cd mpcdl
-
+```
 2. Create a Conda environment
+```bash
 conda create -f environment.yml -y
 conda activate mpcdl
-
-Verification
-python -c "import mpcdl; print('mpcdl installed successfully')"
-
+```
 
 ## Usage
 
