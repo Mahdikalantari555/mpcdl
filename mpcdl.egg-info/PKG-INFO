@@ -1,0 +1,116 @@
+Metadata-Version: 2.4
+Name: mpcdl
+Version: 0.1.0
+Summary: A library for simplifying access to Microsoft Planetary Computer data.
+Author-email: Mahdi kalantari <mahdikalantari555@gmail.com>
+License: MIT
+Project-URL: Homepage, https://github.com/Mahdikalantari555/mpcdl
+Project-URL: Documentation, https://github.com/Mahdikalantari555/mpcdl#readme
+Project-URL: Repository, https://github.com/Mahdikalantari555/mpcdl
+Keywords: STAC,Microsoft Planetary Computer,geospatial,remote sensing,data download
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Classifier: Programming Language :: Python :: 3.12
+Classifier: Topic :: Scientific/Engineering :: GIS
+Classifier: Topic :: Software Development :: Libraries :: Python Modules
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: planetary-computer==1.0.0
+Requires-Dist: pystac-client==0.9.0
+Requires-Dist: pystac>=1.10.0
+Requires-Dist: stackstac==0.5.1
+Requires-Dist: requests
+Requires-Dist: tqdm
+Requires-Dist: python-dotenv>=1.1.1
+Provides-Extra: geo
+Requires-Dist: rasterio==1.4.3; extra == "geo"
+Requires-Dist: rioxarray==0.19.0; extra == "geo"
+Requires-Dist: xarray==2025.10.1; extra == "geo"
+Requires-Dist: geopandas==1.1.1; extra == "geo"
+Requires-Dist: shapely==2.1.2; extra == "geo"
+Requires-Dist: pyproj==3.7.2; extra == "geo"
+Provides-Extra: viz
+Requires-Dist: matplotlib==3.10.7; extra == "viz"
+Requires-Dist: plotly==6.3.1; extra == "viz"
+Provides-Extra: dev
+Requires-Dist: numpy==1.26.4; extra == "dev"
+Requires-Dist: pandas==2.3.3; extra == "dev"
+Requires-Dist: python-dotenv==1.1.1; extra == "dev"
+Requires-Dist: PyYAML==6.0.3; extra == "dev"
+Requires-Dist: pytest==8.4.2; extra == "dev"
+Requires-Dist: schedule==1.2.2; extra == "dev"
+Provides-Extra: all
+Requires-Dist: mpcdl[geo]; extra == "all"
+Requires-Dist: mpcdl[viz]; extra == "all"
+Requires-Dist: mpcdl[dev]; extra == "all"
+Dynamic: license-file
+
+# mpcdl
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+A Python library for downloading remote sensed data easily from Microsoft Planetary Computer (MPC).
+
+## Installation
+
+Install mpcdl directly from GitHub:
+
+```bash
+pip install git+https://github.com/Mahdikalantari555/mpcdl.git
+```
+
+Install on Conda environment – recommended:
+
+This method creates an isolated Conda environment and installs mpcdl from source while resolving geospatial dependencies cleanly.
+
+1. Clone the repository
+git clone https://github.com/Mahdikalantari555/mpcdl.git
+cd mpcdl
+
+2. Create a Conda environment
+conda create -f environment.yml -y
+conda activate mpcdl
+
+Verification
+python -c "import mpcdl; print('mpcdl installed successfully')"
+
+
+## Usage
+
+Here's a basic example of searching and downloading Sentinel-2 data:
+
+```python
+import mpcdl
+
+# Search for Sentinel-2 data
+items = mpcdl.search_mpc_collection(
+    collection="sentinel-2-l2a",
+    bbox=[-122.5, 37.7, -122.3, 37.8],
+    datetime_range="2023-06-01/2023-06-30",
+    limit=5
+)
+
+print(f"Found {len(items)} items")
+
+# Download assets from the first item
+if items:
+    assets = mpcdl.download_stac_assets(
+        items[0].assets,
+        output_dir="./data",
+        asset_keys=["B04", "B03", "B02"]
+    )
+    print("Downloaded RGB bands")
+```
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

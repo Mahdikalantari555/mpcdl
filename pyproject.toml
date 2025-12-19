@@ -1,0 +1,99 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mpcdl"
+version = "0.1.0"
+description = "A library for simplifying access to Microsoft Planetary Computer data."
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.8"
+authors = [
+    {name = "Mahdi kalantari", email = "mahdikalantari555@gmail.com"},
+]
+keywords = ["STAC", "Microsoft Planetary Computer", "geospatial", "remote sensing", "data download"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "planetary-computer==1.0.0",
+    "pystac-client==0.9.0",
+    "pystac>=1.10.0",
+    "stackstac==0.5.1",
+    "requests",
+    "tqdm",
+    "python-dotenv>=1.1.1",
+]
+
+[project.optional-dependencies]
+geo = [
+    "rasterio==1.4.3",
+    "rioxarray==0.19.0",
+    "xarray==2025.10.1",
+    "geopandas==1.1.1",
+    "shapely==2.1.2",
+    "pyproj==3.7.2",
+]
+viz = [
+    "matplotlib==3.10.7",
+    "plotly==6.3.1",
+]
+dev = [
+    "numpy==1.26.4",
+    "pandas==2.3.3",
+    "python-dotenv==1.1.1",
+    "PyYAML==6.0.3",
+    "pytest==8.4.2",
+    "schedule==1.2.2",
+]
+all = [
+    "mpcdl[geo]",
+    "mpcdl[viz]",
+    "mpcdl[dev]",
+]
+
+[project.urls]
+Homepage = "https://github.com/Mahdikalantari555/mpcdl"
+Documentation = "https://github.com/Mahdikalantari555/mpcdl#readme"
+Repository = "https://github.com/Mahdikalantari555/mpcdl"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.setuptools.package-data]
+mpcdl = ["*.yaml", "*.yml", "*.json"]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
