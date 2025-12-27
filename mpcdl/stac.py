@@ -95,6 +95,50 @@ class MPCSTACClient:
             logger.error(f"Failed to retrieve item '{item_id}': {e}")
             return None
 
+    def get_collection_bands(self, collection: str) -> List[str]:
+        """
+        Get available band names for a collection.
+
+        Args:
+            collection: Collection ID to get bands for.
+
+        Returns:
+            List of band names available in the collection.
+        """
+        try:
+            # Get the collection
+            collection_obj = self.client.get_collection(collection)
+            
+            # Get a sample item to extract band information
+            search = self.client.search(collections=[collection], limit=1)
+            items = list(search.items())
+            
+            if not items:
+                logger.warning(f"No items found in collection '{collection}'")
+                return []
+            
+            # Get band names from the first item's assets
+            sample_item = items[0]
+            band_names = []
+            
+            for asset_key, asset in sample_item.assets.items():
+                # Filter out non-band assets (like metadata, thumbnails, etc.)
+                if hasattr(asset, 'eo_bands') and asset.eo_bands:
+                    # This is an EO band asset
+                    for band in asset.eo_bands:
+                        if band.name and band.name not in band_names:
+                            band_names.append(band.name)
+                elif asset_key not in ['metadata', 'thumbnail', 'overview']:
+                    # Add asset key as band name for non-EO assets
+                    band_names.append(asset_key)
+            
+            logger.info(f"Found {len(band_names)} bands in collection '{collection}': {band_names}")
+            return band_names
+            
+        except Exception as e:
+            logger.error(f"Failed to get bands for collection '{collection}': {e}")
+            return []
+
     def get_signed_urls(self, item: pystac.Item) -> Dict[str, str]:
         """
         Get signed URLs for all assets in a STAC item.
@@ -213,3 +257,17 @@ def get_mpc_item(item_id: str, collection: str) -> Optional[pystac.Item]:
     """
     client = MPCSTACClient()
     return client.get_item(item_id, collection)
+
+
+def get_mpc_collection_bands(collection: str) -> List[str]:
+    """
+    Convenience function to get available bands for an MPC collection.
+
+    Args:
+        collection: Collection ID.
+
+    Returns:
+        List of band names available in the collection.
+    """
+    client = MPCSTACClient()
+    return client.get_collection_bands(collection)

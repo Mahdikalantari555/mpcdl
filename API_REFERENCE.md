@@ -96,6 +96,15 @@ Retrieve a specific STAC item by ID.
 
 **Returns:** The STAC item if found, None otherwise
 
+#### `get_collection_bands(collection)`
+
+Get available band names for a collection.
+
+**Parameters:**
+- `collection` (str): Collection ID to get bands for
+
+**Returns:** List of band names available in the collection
+
 #### `get_signed_urls(item)`
 
 Get signed URLs for all assets in a STAC item.
@@ -131,6 +140,15 @@ Convenience function to search items in an MPC collection.
 - `require_full_bbox_coverage` (bool): If True, only return items whose footprint fully covers the bbox
 
 **Returns:** List of STAC items
+
+#### `get_mpc_collection_bands(collection)`
+
+Convenience function to get available bands for an MPC collection.
+
+**Parameters:**
+- `collection` (str): Collection ID
+
+**Returns:** List of band names available in the collection
 
 #### `get_mpc_item(item_id, collection)`
 
