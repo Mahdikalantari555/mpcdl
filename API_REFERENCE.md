@@ -160,6 +160,53 @@ Convenience function to get a specific MPC item.
 
 **Returns:** STAC item if found
 
+#### `get_item_assets(item)`
+
+Get detailed information about all assets in a STAC item.
+
+This function extracts comprehensive information about each asset in a STAC item, including URLs, media types, roles, descriptions, and additional metadata like file size, spatial resolution, and bounding box when available.
+
+**Parameters:**
+- `item` (pystac.Item): The STAC item containing assets
+
+**Returns:** Dictionary mapping asset keys to detailed asset information. Each asset info dict contains:
+- `'url'`: Asset URL
+- `'type'`: Media type
+- `'roles'`: List of roles (e.g., `['data', 'thumbnail']`)
+- `'description'`: Asset description or title
+- `'file_size'`: File size in bytes (if available)
+- `'gsd'`: Ground sample distance/resolution (if available)
+- `'bbox'`: Asset bounding box (if available)
+- `'shape'`: Image dimensions (if available)
+
+**Example:**
+```python
+import mpcdl
+
+# Search for items
+items = mpcdl.search_mpc_collection(
+    collection="sentinel-2-l2a",
+    bbox=[-122.5, 37.7, -122.3, 37.8],
+    datetime_range="2023-06-01/2023-06-30",
+    limit=1
+)
+
+if items:
+    # Get detailed asset information
+    assets_info = mpcdl.get_item_assets(items[0])
+
+    # Print available assets with descriptions
+    for asset_key, asset_info in assets_info.items():
+        print(f"{asset_key}: {asset_info['description']}")
+
+    # Access specific asset details
+    if 'B04' in assets_info:
+        b04_info = assets_info['B04']
+        print(f"B04 URL: {b04_info['url']}")
+        print(f"B04 file size: {b04_info['file_size']} bytes")
+        print(f"B04 GSD: {b04_info['gsd']} meters")
+```
+
 ## Download Module
 
 The download module handles downloading data from STAC catalogs and other sources.

@@ -259,6 +259,59 @@ def get_mpc_item(item_id: str, collection: str) -> Optional[pystac.Item]:
     return client.get_item(item_id, collection)
 
 
+def get_item_assets(item: pystac.Item) -> Dict[str, Dict[str, Any]]:
+    """
+    Get detailed information about all assets in a STAC item.
+
+    This function extracts comprehensive information about each asset in a STAC item,
+    including URLs, media types, roles, descriptions, and additional metadata like
+    file size, spatial resolution, and bounding box when available.
+
+    Args:
+        item (pystac.Item): The STAC item containing assets.
+
+    Returns:
+        Dict[str, Dict[str, Any]]: Dictionary mapping asset keys to detailed asset information.
+            Each asset info dict contains:
+            - 'url': Asset URL
+            - 'type': Media type
+            - 'roles': List of roles (e.g., ['data', 'thumbnail'])
+            - 'description': Asset description or title
+            - 'file_size': File size in bytes (if available)
+            - 'gsd': Ground sample distance/resolution (if available)
+            - 'bbox': Asset bounding box (if available)
+            - 'shape': Image dimensions (if available)
+    """
+    assets_info = {}
+
+    for asset_key, asset in item.assets.items():
+        asset_info = {
+            "url": asset.href,
+            "type": asset.media_type or "unknown",
+            "roles": list(asset.roles) if hasattr(asset, 'roles') and asset.roles else [],
+            "description": "",
+            "file_size": None,
+            "gsd": None,
+            "bbox": None,
+            "shape": None
+        }
+
+        # Extract description and additional metadata
+        if hasattr(asset, 'properties') and asset.properties:
+            asset_info["description"] = asset.properties.get('title') or asset.properties.get('description') or ""
+            asset_info["file_size"] = asset.properties.get('file:size')
+            asset_info["gsd"] = asset.properties.get('gsd')
+            asset_info["bbox"] = asset.properties.get('proj:bbox')
+            asset_info["shape"] = asset.properties.get('proj:shape')
+        elif hasattr(asset, 'title'):
+            asset_info["description"] = asset.title or ""
+
+        assets_info[asset_key] = asset_info
+
+    logger.info(f"Retrieved detailed information for {len(assets_info)} assets from item '{item.id}'")
+    return assets_info
+
+
 def get_mpc_collection_bands(collection: str) -> List[str]:
     """
     Convenience function to get available bands for an MPC collection.
