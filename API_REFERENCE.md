@@ -116,7 +116,7 @@ Convert STAC items to a GeoDataFrame.
 
 ### STAC Functions
 
-#### `search_mpc_collection(collection, bbox=None, datetime_range=None, limit=100)`
+#### `search_mpc_collection(collection, bbox=None, datetime_range=None, limit=100, path=None, row=None, mgrs_tile=None, require_full_bbox_coverage=False)`
 
 Convenience function to search items in an MPC collection.
 
@@ -125,6 +125,10 @@ Convenience function to search items in an MPC collection.
 - `bbox` (Optional[List[float]]): Bounding box
 - `datetime_range` (Optional[str]): Date range
 - `limit` (int): Max items
+- `path` (Optional[int]): WRS path number (for Landsat collections)
+- `row` (Optional[int]): WRS row number (for Landsat collections)
+- `mgrs_tile` (Optional[str]): MGRS tile ID (for Sentinel-2 collections)
+- `require_full_bbox_coverage` (bool): If True, only return items whose footprint fully covers the bbox
 
 **Returns:** List of STAC items
 

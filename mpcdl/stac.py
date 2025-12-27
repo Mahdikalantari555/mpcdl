@@ -13,7 +13,7 @@ from pystac_client import Client
 from planetary_computer import sign
 import stackstac
 import geopandas as gpd
-from shapely.geometry import shape
+from shapely.geometry import shape, Polygon
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +145,11 @@ def search_mpc_collection(
     collection: str,
     bbox: Optional[List[float]] = None,
     datetime_range: Optional[str] = None,
-    limit: int = 100
+    limit: int = 100,
+    path: Optional[int] = None,
+    row: Optional[int] = None,
+    mgrs_tile: Optional[str] = None,
+    require_full_bbox_coverage: bool = False
 ) -> List[pystac.Item]:
     """
     Convenience function to search items in an MPC collection.
@@ -155,12 +159,45 @@ def search_mpc_collection(
         bbox: Bounding box.
         datetime_range: Date range.
         limit: Max items.
+        path: WRS path number (for Landsat collections).
+        row: WRS row number (for Landsat collections).
+        mgrs_tile: MGRS tile ID (for Sentinel-2 collections).
+        require_full_bbox_coverage: If True, only return items whose footprint fully covers the bbox.
 
     Returns:
         List of STAC items.
     """
     client = MPCSTACClient()
-    return client.search_items(collection, bbox, datetime_range, limit)
+    query = {}
+    if path is not None:
+        query["landsat:wrs_path"] = {"eq": path}
+    if row is not None:
+        query["landsat:wrs_row"] = {"eq": row}
+    if mgrs_tile is not None:
+        query["s2:mgrs_tile"] = {"eq": mgrs_tile}
+    kwargs = {}
+    if query:
+        kwargs["query"] = query
+    items = client.search_items(collection, bbox, datetime_range, limit, **kwargs)
+
+    if require_full_bbox_coverage and bbox:
+        # Create bbox polygon
+        bbox_poly = Polygon([
+            (bbox[0], bbox[1]),
+            (bbox[2], bbox[1]),
+            (bbox[2], bbox[3]),
+            (bbox[0], bbox[3])
+        ])
+        # Filter items where footprint fully contains bbox
+        filtered_items = []
+        for item in items:
+            item_geom = shape(item.geometry)
+            if item_geom.contains(bbox_poly):
+                filtered_items.append(item)
+        logger.info(f"Filtered to {len(filtered_items)} items with full bbox coverage")
+        return filtered_items
+
+    return items
 
 
 def get_mpc_item(item_id: str, collection: str) -> Optional[pystac.Item]:
