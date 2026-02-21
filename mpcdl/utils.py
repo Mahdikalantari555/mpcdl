@@ -8,12 +8,15 @@ This module contains utility functions and helpers for the package.
 import logging
 import os
 from pathlib import Path
-from typing import Dict, Any, Optional, Union
+from typing import Dict, Any, Optional, Union, List, Tuple
 from dotenv import load_dotenv
 import yaml
 import json
 from datetime import datetime
 import importlib.metadata
+import geopandas as gpd
+from shapely.geometry import Polygon
+from pyproj import Transformer
 
 logger = logging.getLogger(__name__)
 
@@ -291,3 +294,668 @@ def timestamp_filename(prefix: str = "", suffix: str = "", extension: str = "") 
         filename += f".{extension}"
 
     return filename
+
+
+def reproject_bbox_to_wgs84(bbox: List[float], from_crs: Union[str, int]) -> List[float]:
+    """
+    Reproject a bounding box from any CRS to WGS84.
+
+    Args:
+        bbox: Bounding box as [min_x, min_y, max_x, max_y] in the source CRS.
+        from_crs: Source coordinate reference system (EPSG code, WKT, or PROJ string).
+
+    Returns:
+        Bounding box as [min_lon, min_lat, max_lon, max_lat] in WGS84.
+    """
+    try:
+        min_x, min_y, max_x, max_y = bbox
+        
+        # Create polygon from bbox
+        polygon = Polygon([
+            (min_x, min_y),
+            (max_x, min_y),
+            (max_x, max_y),
+            (min_x, max_y)
+        ])
+        
+        # Create GeoDataFrame
+        gdf = gpd.GeoDataFrame([1], geometry=[polygon], crs=from_crs)
+        
+        # Reproject to WGS84
+        gdf_wgs84 = gdf.to_crs("EPSG:4326")
+        
+        # Extract bounding box
+        bounds = gdf_wgs84.total_bounds
+        return [bounds[0], bounds[1], bounds[2], bounds[3]]
+        
+    except Exception as e:
+        logger.error(f"Failed to reproject bbox from CRS {from_crs}: {e}")
+        raise
+
+
+def get_layer_bbox_wgs84(layer) -> Optional[List[float]]:
+    """
+    Get the bounding box of a QGIS layer in WGS84 coordinates.
+
+    Args:
+        layer: QGIS map layer object.
+
+    Returns:
+        Bounding box as [min_lon, min_lat, max_lon, max_lat] in WGS84, or None if error.
+    """
+    try:
+        # Get layer extent
+        extent = layer.extent()
+        
+        # Create bbox from extent
+        bbox = [extent.xMinimum(), extent.yMinimum(), extent.xMaximum(), extent.yMaximum()]
+        
+        # Get layer CRS
+        layer_crs = layer.crs()
+        
+        if not layer_crs or layer_crs.isGeographic():
+            # Already in geographic coordinates, no reprojection needed
+            return bbox
+        
+        # Reproject to WGS84
+        return reproject_bbox_to_wgs84(bbox, layer_crs.authid())
+        
+    except Exception as e:
+        logger.error(f"Failed to get layer bbox in WGS84: {e}")
+        return None
+
+
+def get_map_extent_bbox_wgs84(extent, map_crs) -> List[float]:
+    """
+    Get map extent bounding box in WGS84 coordinates.
+
+    Args:
+        extent: QGIS map extent object.
+        map_crs: QGIS coordinate reference system object.
+
+    Returns:
+        Bounding box as [min_lon, min_lat, max_lon, max_lat] in WGS84.
+    """
+    try:
+        # Create bbox from extent
+        bbox = [extent.xMinimum(), extent.yMinimum(), extent.xMaximum(), extent.yMaximum()]
+        
+        if not map_crs or map_crs.isGeographic():
+            # Already in geographic coordinates, no reprojection needed
+            return bbox
+        
+        # Reproject to WGS84
+        return reproject_bbox_to_wgs84(bbox, map_crs.authid())
+        
+    except Exception as e:
+        logger.error(f"Failed to reproject map extent to WGS84: {e}")
+        raise
+
+
+def get_geodataframe_bbox_wgs84(gdf: gpd.GeoDataFrame) -> List[float]:
+    """
+    Get bounding box of a GeoDataFrame in WGS84 coordinates.
+
+    Args:
+        gdf: GeoDataFrame object.
+
+    Returns:
+        Bounding box as [min_lon, min_lat, max_lon, max_lat] in WGS84.
+    """
+    try:
+        # Ensure GeoDataFrame is in WGS84
+        if gdf.crs != "EPSG:4326":
+            gdf_wgs84 = gdf.to_crs("EPSG:4326")
+        else:
+            gdf_wgs84 = gdf
+        
+        # Get bounds
+        bounds = gdf_wgs84.total_bounds
+        return [bounds[0], bounds[1], bounds[2], bounds[3]]
+        
+    except Exception as e:
+        logger.error(f"Failed to get GeoDataFrame bbox in WGS84: {e}")
+        raise
+
+
+def extract_layer_geometry_wgs84(layer) -> Optional[gpd.GeoDataFrame]:
+    """
+    Extract actual vector geometry from a QGIS layer and reproject to WGS84.
+
+    Args:
+        layer: QGIS vector layer object.
+
+    Returns:
+        GeoDataFrame with geometry in WGS84 coordinates, or None if error.
+    """
+    try:
+        from qgis.core import Qgis
+        
+        # Check if layer is a vector layer
+        if layer.type() != layer.VectorLayer:
+            logger.warning(f"Layer '{layer.name()}' is not a vector layer")
+            return None
+        
+        # Get layer CRS
+        layer_crs = layer.crs()
+        if not layer_crs or layer_crs.isGeographic():
+            logger.info(f"Layer '{layer.name()}' is already in geographic coordinates")
+        
+        # Extract features and create GeoDataFrame
+        features = []
+        geometries = []
+        
+        for feature in layer.getFeatures():
+            geom = feature.geometry()
+            if geom and not geom.isEmpty():
+                # Convert QGIS geometry to Shapely
+                shapely_geom = geom.constGet().clone()
+                if shapely_geom:
+                    geometries.append(shapely_geom)
+        
+        if not geometries:
+            logger.warning(f"No valid geometries found in layer '{layer.name()}'")
+            return None
+        
+        # Create GeoDataFrame
+        gdf = gpd.GeoDataFrame(geometry=geometries, crs=layer_crs.authid() if layer_crs else "EPSG:4326")
+        
+        # Reproject to WGS84 if necessary
+        if layer_crs and not layer_crs.isGeographic():
+            gdf_wgs84 = gdf.to_crs("EPSG:4326")
+            logger.info(f"Reprojected layer '{layer.name()}' geometry to WGS84")
+            return gdf_wgs84
+        else:
+            return gdf
+            
+    except Exception as e:
+        logger.error(f"Failed to extract geometry from layer '{layer.name()}': {e}")
+        return None
+
+
+def merge_geometries_to_multipolygon(gdf: gpd.GeoDataFrame) -> Optional[Polygon]:
+    """
+    Merge multiple geometries in a GeoDataFrame into a single MultiPolygon.
+
+    Args:
+        gdf: GeoDataFrame with polygon geometries.
+
+    Returns:
+        Shapely MultiPolygon or Polygon, or None if error.
+    """
+    try:
+        from shapely.geometry import MultiPolygon, Polygon
+        from shapely.ops import unary_union
+        
+        if gdf.empty or gdf.geometry.is_empty.all():
+            logger.warning("GeoDataFrame is empty or contains no valid geometries")
+            return None
+        
+        # Ensure all geometries are polygons
+        polygon_geoms = []
+        for geom in gdf.geometry:
+            if geom.geom_type in ['Polygon', 'MultiPolygon']:
+                polygon_geoms.append(geom)
+            elif geom.geom_type in ['LineString', 'MultiLineString']:
+                # Try to buffer lines to create polygons
+                buffered = geom.buffer(0.0001)  # Small buffer to create area
+                if buffered.geom_type in ['Polygon', 'MultiPolygon']:
+                    polygon_geoms.append(buffered)
+            elif geom.geom_type in ['Point', 'MultiPoint']:
+                # Buffer points to create small polygons
+                buffered = geom.buffer(0.0001)
+                if buffered.geom_type in ['Polygon', 'MultiPolygon']:
+                    polygon_geoms.append(buffered)
+        
+        if not polygon_geoms:
+            logger.warning("No valid polygon geometries found for merging")
+            return None
+        
+        # Merge geometries using unary_union
+        merged_geom = unary_union(polygon_geoms)
+        
+        logger.info(f"Merged {len(polygon_geoms)} geometries into {merged_geom.geom_type}")
+        return merged_geom
+        
+    except Exception as e:
+        logger.error(f"Failed to merge geometries: {e}")
+        return None
+
+
+def validate_geometry_for_clipping(geometry) -> bool:
+    """
+    Validate that geometry is suitable for clipping operations.
+
+    Args:
+        geometry: Shapely geometry object.
+
+    Returns:
+        True if geometry is valid for clipping, False otherwise.
+    """
+    try:
+        if geometry is None:
+            return False
+        
+        # Check if geometry is empty
+        if hasattr(geometry, 'is_empty') and geometry.is_empty:
+            logger.warning("Geometry is empty")
+            return False
+        
+        # Check if geometry is valid
+        if hasattr(geometry, 'is_valid') and not geometry.is_valid:
+            logger.warning(f"Geometry is invalid: {geometry}")
+            return False
+        
+        # Check geometry type
+        valid_types = ['Polygon', 'MultiPolygon', 'LineString', 'MultiLineString', 'Point', 'MultiPoint']
+        if hasattr(geometry, 'geom_type') and geometry.geom_type not in valid_types:
+            logger.warning(f"Geometry type '{geometry.geom_type}' not suitable for clipping")
+            return False
+        
+        return True
+        
+    except Exception as e:
+        logger.error(f"Error validating geometry: {e}")
+        return False
+
+
+def create_mtl_json(
+    item: 'pystac.Item',
+    downloaded_files: Dict[str, Path],
+    output_dir: Union[str, Path]
+) -> bool:
+    """
+    Create MTL.json metadata file from STAC item properties.
+    
+    This function creates a comprehensive metadata JSON file containing:
+    - Basic item info (ID, datetime, collection)
+    - Geometry and bounding box
+    - All STAC properties (cloud cover, sun angles, etc.)
+    - List of downloaded files and their paths
+    - Collection-specific metadata fields
+    
+    Args:
+        item: STAC item
+        downloaded_files: Dict mapping asset keys to downloaded file paths
+        output_dir: Output directory for the MTL.json file
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    import json
+    from pathlib import Path
+    import logging
+    from datetime import datetime
+    
+    logger = logging.getLogger(__name__)
+    
+    try:
+        output_dir = Path(output_dir)
+        
+        # Build comprehensive MTL data
+        mtl_data = {
+            "_metadata": {
+                "created": datetime.now().isoformat(),
+                "source": "MPC Downloader Plugin",
+                "item_id": item.id,
+                "collection": item.collection_id
+            },
+            "product_info": {
+                "item_id": item.id,
+                "datetime": item.datetime.isoformat() if item.datetime else None,
+                "cloud_cover": item.properties.get('eo:cloud_cover'),
+                "bbox": item.bbox,
+                "geometry": item.geometry
+            }
+        }
+        
+        # Add Landsat-specific fields if available
+        if item.properties.get('landsat:wrs_path'):
+            mtl_data["product_info"]["path"] = item.properties.get('landsat:wrs_path')
+            mtl_data["product_info"]["row"] = item.properties.get('landsat:wrs_row')
+            mtl_data["product_info"]["utm_zone"] = item.properties.get('utm:zone')
+            mtl_data["product_info"]["epsg"] = item.properties.get('proj:epsg')
+        
+        # Add sun angles
+        mtl_data["sun_angles"] = {
+            "elevation": item.properties.get("view:sun_elevation"),
+            "azimuth": item.properties.get("view:sun_azimuth")
+        }
+        
+        # Add all STAC properties
+        mtl_data["stac_properties"] = item.properties
+        
+        # Add downloaded files info
+        mtl_data["downloaded_files"] = {
+            str(k): str(v) for k, v in downloaded_files.items()
+        }
+        
+        # Add list of downloaded asset keys
+        mtl_data["downloaded_bands"] = list(downloaded_files.keys())
+        
+        # Add asset info (all available assets from the item)
+        if hasattr(item, 'assets'):
+            mtl_data["available_assets"] = list(item.assets.keys())
+        
+        # Write to file
+        mtl_path = output_dir / "MTL.json"
+        with open(mtl_path, 'w', encoding='utf-8') as f:
+            json.dump(mtl_data, f, indent=2, default=str)
+        
+        logger.info(f"Created MTL.json: {mtl_path}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to create MTL.json: {e}")
+        return False
+
+
+def create_full_mtl_json(
+    item: 'pystac.Item',
+    downloaded_files: Dict[str, Path],
+    output_dir: Union[str, Path]
+) -> bool:
+    """
+    Create a comprehensive MTL.json metadata file with full scene information.
+    
+    This function creates a complete metadata JSON file containing:
+    - Basic item info: item_id, datetime, cloud_cover, collection
+    - Geometry and bounding box
+    - Path/row for Landsat, or other collection-specific identifiers
+    - Sun angles (elevation, azimuth)
+    - All STAC properties
+    - List of all available assets
+    - List of downloaded files
+    - A comprehensive "METADATA" section with PRODUCT_METADATA, SENSOR_PARAMETERS,
+      SUN_PARAMETERS, and other collection-specific fields
+    
+    Args:
+        item: STAC item
+        downloaded_files: Dict mapping asset keys to downloaded file paths
+        output_dir: Output directory for the MTL.json file
+        
+    Returns:
+        True if successful, False otherwise
+    """
+    import json
+    from pathlib import Path
+    import logging
+    from datetime import datetime
+    
+    logger = logging.getLogger(__name__)
+    
+    def safe_get(props: Dict, key: str, default: Any = None) -> Any:
+        """Safely get a value from properties, handling missing keys gracefully."""
+        return props.get(key, default) if isinstance(props, dict) else default
+    
+    def extract_date_from_datetime(dt_str: Optional[str]) -> Optional[str]:
+        """Extract date part (YYYY-MM-DD) from datetime string."""
+        if not dt_str:
+            return None
+        try:
+            # Try parsing as ISO format
+            if 'T' in dt_str:
+                return dt_str.split('T')[0]
+            return dt_str
+        except Exception:
+            return None
+    
+    try:
+        output_dir = Path(output_dir)
+        properties = item.properties
+        collection_id = item.collection_id or ""
+        
+        # Determine if this is a Landsat collection
+        is_landsat = 'landsat' in collection_id.lower()
+        
+        # Build basic info section
+        basic_info = {
+            "item_id": item.id,
+            "datetime": item.datetime.isoformat() if item.datetime else None,
+            "date": extract_date_from_datetime(item.properties.get('datetime')),
+            "cloud_cover": safe_get(properties, 'eo:cloud_cover'),
+            "collection": collection_id
+        }
+        
+        # Geometry and bbox
+        geometry_info = {
+            "bbox": item.bbox,
+            "geometry": item.geometry
+        }
+        
+        # Sun angles
+        sun_angles = {
+            "sun_elevation": safe_get(properties, 'view:sun_elevation'),
+            "sun_azimuth": safe_get(properties, 'view:sun_azimuth')
+        }
+        
+        # Path/Row for Landsat
+        path_row = {}
+        if is_landsat:
+            path_row = {
+                "wrs_path": safe_get(properties, 'landsat:wrs_path'),
+                "wrs_row": safe_get(properties, 'landsat:wrs_row'),
+                "utm_zone": safe_get(properties, 'utm:zone'),
+                "epsg": safe_get(properties, 'proj:epsg')
+            }
+        
+        # Build comprehensive METADATA section
+        metadata = {
+            "_note": "This MTL.json file was created from STAC properties by MPC Downloader Plugin"
+        }
+        
+        # PRODUCT_METADATA section
+        product_metadata = {
+            "LANDSAT_PRODUCT_ID": item.id,
+            "ACQUISITION_DATE": extract_date_from_datetime(safe_get(properties, 'datetime')),
+            "CLOUD_COVER": safe_get(properties, 'eo:cloud_cover'),
+            "WRS Path": safe_get(properties, 'landsat:wrs_path'),
+            "WRS Row": safe_get(properties, 'landsat:wrs_row'),
+            "STATION": safe_get(properties, 'station'),
+            "SENSOR_ID": safe_get(properties, 'landsat:sensor_id'),
+            "COLLECTION_NUMBER": safe_get(properties, 'landsat:collection_number'),
+            "COLLECTION_CATEGORY": safe_get(properties, 'landsat:collection_category'),
+            "CATEGORY": safe_get(properties, 'landsat:collection_category'),
+            "CORRECTION_LEVEL": safe_get(properties, 'landsat:correction'),
+            "DATA_TYPE": safe_get(properties, 'landsat:data_type')
+        }
+        
+        # Remove None values from product_metadata
+        product_metadata = {k: v for k, v in product_metadata.items() if v is not None}
+        metadata["PRODUCT_METADATA"] = product_metadata
+        
+        # SENSOR_PARAMETERS section
+        sensor_parameters = {
+            "SENSOR_ID": safe_get(properties, 'sensor_id') or safe_get(properties, 'landsat:sensor_id'),
+            "SPACECRAFT_ID": safe_get(properties, 'platform') or safe_get(properties, 'mission'),
+            "INSTRUMENTS": safe_get(properties, 'instruments'),
+            "FLATFORM": safe_get(properties, 'platform'),
+            "MISSION": safe_get(properties, 'mission'),
+            "SATELLITE": safe_get(properties, 'platform')
+        }
+        
+        # Remove None values from sensor_parameters
+        sensor_parameters = {k: v for k, v in sensor_parameters.items() if v is not None}
+        metadata["SENSOR_PARAMETERS"] = sensor_parameters
+        
+        # SUN_PARAMETERS section
+        sun_parameters = {
+            "SUN_ELEVATION": safe_get(properties, 'view:sun_elevation'),
+            "SUN_AZIMUTH": safe_get(properties, 'view:sun_azimuth')
+        }
+        
+        # Remove None values from sun_parameters
+        sun_parameters = {k: v for k, v in sun_parameters.items() if v is not None}
+        metadata["SUN_PARAMETERS"] = sun_parameters
+        
+        # IMAGE_PROPERTIES section for non-Landsat collections
+        if not is_landsat:
+            image_properties = {
+                "CLOUD_COVER": safe_get(properties, 'eo:cloud_cover'),
+                "CLOUD_SHADOW_PERCENTAGE": safe_get(properties, 'eo:cloud_shadow_percentage'),
+                "SNOW_ICE_PERCENTAGE": safe_get(properties, 'eo:snow_ice_percentage'),
+                "CIRRUS_PERCENTAGE": safe_get(properties, 'eo:cirrus_percentage'),
+                "NODATA_PIXEL_PERCENTAGE": safe_get(properties, 'eo:nodata_pixel_percentage'),
+                "SATURATED_PIXEL_PERCENTAGE": safe_get(properties, 'eo:saturated_pixel_percentage')
+            }
+            image_properties = {k: v for k, v in image_properties.items() if v is not None}
+            metadata["IMAGE_PROPERTIES"] = image_properties
+        
+        # Build the complete MTL data structure
+        mtl_data = {
+            "_metadata": {
+                "created": datetime.now().isoformat(),
+                "source": "MPC Downloader Plugin",
+                "version": "1.0.0",
+                "item_id": item.id,
+                "collection": collection_id,
+                "note": "Comprehensive MTL.json created from STAC properties"
+            },
+            "BASIC_INFO": basic_info,
+            "GEOMETRY": geometry_info,
+            "SUN_ANGLES": sun_angles
+        }
+        
+        # Add path/row info for Landsat
+        if is_landsat and path_row:
+            mtl_data["PATH_ROW"] = path_row
+        
+        # Add METADATA section
+        mtl_data["METADATA"] = metadata
+        
+        # Add all STAC properties
+        mtl_data["STAC_PROPERTIES"] = properties
+        
+        # Add available assets
+        if hasattr(item, 'assets'):
+            mtl_data["AVAILABLE_ASSETS"] = list(item.assets.keys())
+        
+        # Add downloaded files info
+        if downloaded_files:
+            mtl_data["DOWNLOADED_FILES"] = {
+                str(k): str(v) for k, v in downloaded_files.items()
+            }
+            mtl_data["DOWNLOADED_BANDS"] = list(downloaded_files.keys())
+        
+        # Add processing information if available
+        processing_info = {
+            "processing_level": safe_get(properties, 'processing:level'),
+            "product_level": safe_get(properties, 'product_level'),
+            "product_uri": safe_get(properties, 'product_uri'),
+            "grid_spatial": safe_get(properties, 'grid:spatial_reference'),
+            "proj": safe_get(properties, 'proj')
+        }
+        processing_info = {k: v for k, v in processing_info.items() if v is not None}
+        if processing_info:
+            mtl_data["PROCESSING_INFO"] = processing_info
+        
+        # Add temporal information
+        temporal_info = {
+            "start_datetime": item.datetime.isoformat() if item.datetime else None,
+            "end_datetime": safe_get(properties, 'datetime:end'),
+            "duration": safe_get(properties, 'duration')
+        }
+        temporal_info = {k: v for k, v in temporal_info.items() if v is not None}
+        if temporal_info:
+            mtl_data["TEMPORAL_INFO"] = temporal_info
+        
+        # Write to file
+        mtl_path = output_dir / "MTL.json"
+        with open(mtl_path, 'w', encoding='utf-8') as f:
+            json.dump(mtl_data, f, indent=2, default=str)
+        
+        logger.info(f"Created comprehensive MTL.json: {mtl_path}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to create comprehensive MTL.json: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return False
+
+
+def get_collection_metadata_assets(collection: str) -> list:
+    """
+    Get collection-specific metadata assets that should always be downloaded.
+    
+    Args:
+        collection: The STAC collection ID (e.g., 'landsat-c2-l2', 'sentinel-2-l2a')
+        
+    Returns:
+        List of metadata asset keys to download
+    """
+    # Collection-specific metadata assets
+    metadata_assets = {
+        'landsat-c2-l2': [
+            'mtl.txt', 'mtl.xml', 'mtl.json', 'ang', 'qa_radsat', 'qa_aerosol'
+        ],
+        'sentinel-2-l2a': [
+            'safe-manifest', 'product-metadata', 'granule-metadata', 
+            'inspire-metadata', 'datastrip-metadata'
+        ]
+    }
+    
+    return metadata_assets.get(collection, [])
+
+
+def geometry_to_geojson(geometry) -> Optional[Dict]:
+    """
+    Convert Shapely geometry to GeoJSON format.
+
+    Args:
+        geometry: Shapely geometry object.
+
+    Returns:
+        GeoJSON dictionary or None if error.
+    """
+    try:
+        if not validate_geometry_for_clipping(geometry):
+            return None
+        
+        # Convert to GeoJSON
+        geojson = geometry.__geo_interface__
+        return geojson
+        
+    except Exception as e:
+        logger.error(f"Failed to convert geometry to GeoJSON: {e}")
+        return None
+
+
+def get_layer_geometry_wgs84(layer) -> Optional[Dict]:
+    """
+    Get layer geometry as GeoJSON in WGS84 coordinates.
+
+    Args:
+        layer: QGIS vector layer object.
+
+    Returns:
+        GeoJSON dictionary or None if error.
+    """
+    try:
+        # Extract geometry from layer
+        gdf = extract_layer_geometry_wgs84(layer)
+        if gdf is None:
+            return None
+        
+        # Merge geometries if multiple features exist
+        if len(gdf) > 1:
+            merged_geom = merge_geometries_to_multipolygon(gdf)
+            if merged_geom is None:
+                return None
+            geometry = merged_geom
+        else:
+            geometry = gdf.geometry.iloc[0]
+        
+        # Validate and convert to GeoJSON
+        if not validate_geometry_for_clipping(geometry):
+            return None
+        
+        geojson = geometry_to_geojson(geometry)
+        if geojson:
+            logger.info(f"Successfully extracted geometry from layer '{layer.name()}'")
+        
+        return geojson
+        
+    except Exception as e:
+        logger.error(f"Failed to get layer geometry as GeoJSON: {e}")
+        return None
